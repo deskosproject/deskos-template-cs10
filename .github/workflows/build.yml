@@ -1,0 +1,75 @@
+name: build
+
+# Builds one image from this repository's resources and pushes it to
+# ghcr.io/<owner>/<repository>. It does not build an ISO: that is a decision for
+# you (where it is stored, who signs it, how it is distributed).
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Extra tag for the image, for example v1
+        required: false
+
+# A push while another build runs cancels the older one: the newest commit is the
+# image you want, and two builds of the same tree waste ten minutes each.
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  WORKSTATION: my-workstation
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install deskosctl
+        run: |
+          set -euo pipefail
+          base="https://github.com/deskosproject/deskos-core/releases/latest/download"
+          curl -fsSLO "$base/deskosctl-linux-amd64"
+          curl -fsSLo SHA256SUMS "$base/SHA256SUMS"
+          sha256sum -c --ignore-missing SHA256SUMS
+          install -D -m 0755 deskosctl-linux-amd64 "$HOME/.local/bin/deskosctl"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Check the resources
+        run: deskosctl validate ./resources
+
+      - name: Render the build context
+        run: deskosctl render ./resources --workstation "$WORKSTATION" --output ./dist
+
+      - name: Build the image
+        run: |
+          set -euo pipefail
+          repo="$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')"
+          image="ghcr.io/$repo"
+          echo "IMAGE=$image" >> "$GITHUB_ENV"
+          podman build -t "$image:${{ github.sha }}" -t "$image:latest" ./dist
+
+      - name: Log in to the GitHub container registry
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | podman login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Push
+        run: |
+          set -euo pipefail
+          podman push "$IMAGE:${{ github.sha }}"
+          podman push "$IMAGE:latest"
+          if [ -n "${{ inputs.tag }}" ]; then
+            podman tag "$IMAGE:latest" "$IMAGE:${{ inputs.tag }}"
+            podman push "$IMAGE:${{ inputs.tag }}"
+          fi
+
+      - name: Summary
+        run: |
+          echo "Pushed \`$IMAGE:${{ github.sha }}\` and \`$IMAGE:latest\`." >> "$GITHUB_STEP_SUMMARY"
+          echo "Make the package public in the repository's package settings if you want others to pull it." >> "$GITHUB_STEP_SUMMARY"

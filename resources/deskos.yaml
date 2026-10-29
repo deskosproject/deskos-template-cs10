@@ -1,0 +1,78 @@
+apiVersion: core.deskos.org/v1alpha1
+kind: Workstation
+metadata:
+  name: my-workstation
+spec:
+  displayName: My Workstation
+  platformRef: centos-stream-10
+  profiles:
+    - deskos-core
+    - deskos-gnome
+    - rhel-family
+    - organization-baseline
+---
+apiVersion: core.deskos.org/v1alpha1
+kind: Profile
+metadata:
+  name: organization-baseline
+spec:
+  layer: organization
+  resources:
+    - {kind: PackageSet, name: organization-tools}
+    - {kind: FlatpakSet, name: organization-apps}
+    - {kind: GnomeProfile, name: organization-desktop}
+    - {kind: UpdatePolicy, name: organization-updates}
+---
+apiVersion: software.deskos.org/v1alpha1
+kind: PackageSet
+metadata:
+  name: organization-tools
+spec:
+  # Packages the platform's repositories carry. htop, for example, needs EPEL:
+  # add an RpmRepository for it if you want it.
+  packages:
+    - git
+    - rsync
+    - tmux
+    - tree
+    - vim-enhanced
+---
+apiVersion: software.deskos.org/v1alpha1
+kind: FlatpakSet
+metadata:
+  name: organization-apps
+spec:
+  # A Flathub remote comes with the reference. Replace the id or add more; the
+  # machine installs them on first boot, not inside the image.
+  remote: flathub
+  applications:
+    - id: org.libreoffice.LibreOffice
+      branch: stable
+---
+apiVersion: desktop.deskos.org/v1alpha1
+kind: GnomeProfile
+metadata:
+  name: organization-desktop
+spec:
+  defaults:
+    appearance:
+      wallpaper:
+        light: background.svg
+      colorScheme: prefer-dark
+    shell:
+      favorites:
+        - org.gnome.Nautilus.desktop
+        - org.gnome.TextEditor.desktop
+        - org.gnome.Calculator.desktop
+    windows:
+      buttons: [close, minimize, maximize]
+      buttonPlacement: right
+---
+apiVersion: system.deskos.org/v1alpha1
+kind: UpdatePolicy
+metadata:
+  name: organization-updates
+spec:
+  image:
+    schedule: weekly
+    requireACPower: true
